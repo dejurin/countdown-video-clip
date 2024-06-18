@@ -33,7 +33,7 @@ def get_color_name(rgb_tuple):
     return color_name
 
 # Constants
-DURATION = 10  # 10 seconds
+DURATION = 1800  # 10 seconds
 FONT_SIZE = 1200
 FONT = "./fonts/SplineSansMono-SemiBold.ttf"  # Ensure you have this font installed or provide the full path
 SCREEN_SIZE = (3840, 2160)  # Screen resolution
