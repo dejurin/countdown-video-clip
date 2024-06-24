@@ -2,19 +2,21 @@ from moviepy.editor import (
     TextClip,
     CompositeVideoClip,
     ColorClip,
-    AudioFileClip,
-    CompositeAudioClip,
     concatenate_videoclips,
+    AudioFileClip,
+    VideoFileClip,
+    CompositeAudioClip
 )
+from datetime import datetime, timedelta
 import webcolors
 import os
+import gc  # Импортируем модуль gc
 
 def get_font_name(font_path):
-    # Get the base name of the file (e.g., "RedditMono-SemiBold.ttf")
     base_name = os.path.basename(font_path)
-    # Split the base name into name and extension (e.g., "RedditMono-SemiBold" and ".ttf")
     font_name, _ = os.path.splitext(base_name)
     return font_name
+
 def closest_color(requested_color):
     min_colors = {}
     for key, name in webcolors.CSS3_HEX_TO_NAMES.items():
@@ -33,15 +35,15 @@ def get_color_name(rgb_tuple):
     return color_name
 
 # Constants
-DURATION = 1800  # 10 seconds
-FONT_SIZE = 1200
-FONT = "./fonts/SplineSansMono-SemiBold.ttf"  # Ensure you have this font installed or provide the full path
-SCREEN_SIZE = (3840, 2160)  # Screen resolution
-#BACKGROUND_COLOR = (0, 255, 0)  # Green color in RGB format
-BACKGROUND_COLOR = (0, 0, 0)  # Green color in RGB format
-TEXT_COLOR = "white"  # White
+DURATION = 32400  # Total duration of the video in seconds
+PART_DURATION = 600  # Duration of each part (10 minutes)
+FONT_SIZE = 800
+FONT = "./fonts/SplineSansMono-SemiBold.ttf"
+SCREEN_SIZE = (4096,2160)
+BACKGROUND_COLOR = (0, 0, 0)
+TEXT_COLOR = "white"
 TEXT_COLOR_ALERT = "red"
-ALERT_INTERVAL = 5  # Every 5 seconds
+ALERT_INTERVAL = 5
 
 # Load sound files
 end_sound_path = "./end_sound_3s.wav"
@@ -50,48 +52,70 @@ alert_path = "./alert_sound_1s.wav"
 end_sound = AudioFileClip(end_sound_path, fps=44100).set_duration(3)
 alert_sound = AudioFileClip(alert_path, fps=44100).set_duration(1)
 
-# Create background clip
-background = ColorClip(size=SCREEN_SIZE, color=BACKGROUND_COLOR, duration=DURATION)
-
-# Create timer text clips // Stage 1 Timer -5 sec.
-clips_main = []
-for t in range(0, DURATION):
-    remaining_time = DURATION - t
-    hours = remaining_time // 3600
-    minutes = (remaining_time % 3600) // 60
-    seconds = remaining_time % 60
-    if hours == 0:
-        time_text = f"{minutes:02}:{seconds:02}"
-    else:
-        time_text = f"{hours:02}:{minutes:02}:{seconds:02}"
-    if t == 0:
-        file_name = time_text.replace(":", "-")
-    try:
-        text_clip = (
-            TextClip(
-                time_text,
-                fontsize=FONT_SIZE,
-                font=FONT,
-                color=TEXT_COLOR,
-                size=SCREEN_SIZE,
-                method="caption",
+def create_part(start_time, part_duration, part_index):
+    clips_main = []
+    for t in range(part_duration):
+        remaining_time = DURATION - (start_time + t)
+        hours = remaining_time // 3600
+        minutes = (remaining_time % 3600) // 60
+        seconds = remaining_time % 60
+        if hours == 0:
+            time_text = f"{hours:02}:{minutes:02}:{seconds:02}"
+        else:
+            time_text = f"{hours:02}:{minutes:02}:{seconds:02}"
+        try:
+            text_clip = (
+                TextClip(
+                    time_text,
+                    fontsize=FONT_SIZE,
+                    font=FONT,
+                    color=TEXT_COLOR,
+                    size=SCREEN_SIZE,
+                    method="caption",
+                )
+                .set_duration(1)
+                .set_start(t)
+                .set_pos("center")
             )
-            .set_duration(1)
-            .set_start(t)
-            .set_pos("center")
-        )
-        clips_main.append(text_clip)
-    except Exception as e:
-        print(f"Error creating text clip at time {t}: {e}")
-        exit(1)
+            clips_main.append(text_clip)
+        except Exception as e:
+            print(f"Error creating text clip at time {t}: {e}")
+            exit(1)
 
-# Create blinking alert clips // Stage 2 Timer last 5 sec.
+    # Create background clip
+    background = ColorClip(size=SCREEN_SIZE, color=BACKGROUND_COLOR, duration=part_duration)
+    part_video = CompositeVideoClip([background] + clips_main).set_duration(part_duration)
+
+    part_video.write_videofile(
+        f"./part_{part_index}.mp4",
+        fps=1,
+        codec="libx264",
+        audio_codec="aac",
+        temp_audiofile=f'temp-audio_{part_index}.m4a',
+        remove_temp=True,
+        ffmpeg_params=['-vcodec', 'h264_videotoolbox', '-acodec', 'aac'],
+    )
+
+    # Освобождаем память
+    del clips_main, background, part_video
+    gc.collect()
+
+# Create and save each part
+for i in range(0, DURATION, PART_DURATION):
+    create_part(i, min(PART_DURATION, DURATION - i), i // PART_DURATION)
+
+# Combine all parts into one final video
+parts = [f"./part_{i // PART_DURATION}.mp4" for i in range(0, DURATION, PART_DURATION)]
+final_video = concatenate_videoclips([VideoFileClip(part) for part in parts])
+
+# Create blinking alert clips
 clips_blink = []
 for t in range(ALERT_INTERVAL):
     remaining_time = ALERT_INTERVAL - t
+    hours = remaining_time // 3600
     minutes = (remaining_time % 3600) // 60
     seconds = remaining_time % 60
-    time_text = f"{minutes:02}:{seconds:02}"
+    time_text = f"{hours:02}:{minutes:02}:{seconds:02}"
     try:
         text_clip = (
             TextClip(
@@ -111,10 +135,16 @@ for t in range(ALERT_INTERVAL):
         print(f"Error creating text clip at time {t}: {e}")
         exit(1)
 
-# Create end video with sound // Stage 3
+background = ColorClip(size=SCREEN_SIZE, color=BACKGROUND_COLOR, duration=ALERT_INTERVAL)
+blink_video = CompositeVideoClip([background] + clips_blink)
+
+alert_sounds = [alert_sound.set_start(t) for t in range(ALERT_INTERVAL)]
+blink_audio = CompositeAudioClip(alert_sounds)
+blink_video = blink_video.set_audio(blink_audio)
+
 end_text_clip = (
     TextClip(
-        "00:00",
+        "00:00:00",
         fontsize=FONT_SIZE,
         font=FONT,
         color=TEXT_COLOR_ALERT,
@@ -124,30 +154,14 @@ end_text_clip = (
     .set_duration(3)
     .set_pos("center")
 )
+background = ColorClip(size=SCREEN_SIZE, color=BACKGROUND_COLOR, duration=3)
+end_video = CompositeVideoClip([background, end_text_clip]).set_audio(end_sound)
 
-# Composite all clips with background
-main_video = CompositeVideoClip([background] + clips_main).set_duration(
+final_video = concatenate_videoclips([final_video.set_duration(
     DURATION - ALERT_INTERVAL
-)
-blink_video = CompositeVideoClip(
-    [background.set_duration(ALERT_INTERVAL)] + clips_blink
-)
-end_video = CompositeVideoClip([background.set_duration(3), end_text_clip]).set_audio(
-    end_sound
-)
-
-# Add alert sounds to blink video
-alert_sounds = [alert_sound.set_start(t) for t in range(ALERT_INTERVAL)]
-blink_audio = CompositeAudioClip(alert_sounds)
-
-blink_video = blink_video.set_audio(blink_audio)
-
-# Concatenate all videos
-final_video = concatenate_videoclips([main_video, blink_video, end_video])
-
-# Write the final video file
+), blink_video, end_video])
 final_video.write_videofile(
-    f"./video_{SCREEN_SIZE[0]}x{SCREEN_SIZE[1]}_{get_font_name(FONT)}_{get_color_name(BACKGROUND_COLOR)}_countdown_{file_name}.mp4",
+    f"./video_{SCREEN_SIZE[0]}x{SCREEN_SIZE[1]}_{get_font_name(FONT)}_{get_color_name(BACKGROUND_COLOR)}_countdown_{str(timedelta(seconds=DURATION)).replace(':', '-')}.mp4",
     fps=1,
     codec="libx264",
     audio_codec="aac",
