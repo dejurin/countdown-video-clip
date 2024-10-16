@@ -35,13 +35,13 @@ def get_color_name(rgb_tuple):
     return color_name
 
 # Constants
-DURATION = 60  # Total duration of the video in seconds
+DURATION = 5  # Total duration of the video in seconds
 PART_DURATION = 10  # Duration of each part (10 minutes)
 FONT_SIZE = 2200
 FONT = "./fonts/RubikMonoOne-Regular.ttf"
 SCREEN_SIZE = (3840,2160)
-BACKGROUND_COLOR = (0, 255, 0)
-TEXT_COLOR = "white"
+BACKGROUND_COLOR = (255, 255, 255)
+TEXT_COLOR = "black"
 TEXT_COLOR_ALERT = "red"
 ALERT_INTERVAL = 5
 
@@ -57,8 +57,8 @@ ticks_sound = AudioFileClip(ticks_path, fps=44100).set_duration(10)
 def create_part(start_time, part_duration, part_index):
     clips_main = []
     for t in range(part_duration):
-        remaining_time = DURATION - (start_time + t)
-        seconds = 100 if remaining_time % 100 == 0 else remaining_time % 100
+        remaining_time = (start_time + t)
+        seconds = 0 if remaining_time % 100 == 0 else remaining_time % 100
         time_text = f"{seconds}"
         try:
             text_clip = (
@@ -108,8 +108,8 @@ final_video = concatenate_videoclips([VideoFileClip(part) for part in parts])
 # Create blinking alert clips
 clips_blink = []
 for t in range(ALERT_INTERVAL):
-    remaining_time = ALERT_INTERVAL - t
-    seconds = 100 if remaining_time % 100 == 0 else remaining_time % 100
+    remaining_time = DURATION - ALERT_INTERVAL + t
+    seconds = 0 if remaining_time % 100 == 0 else remaining_time % 100
     time_text = f"{seconds}"
     try:
         text_clip = (
@@ -139,7 +139,7 @@ blink_video = blink_video.set_audio(blink_audio)
 
 end_text_clip = (
     TextClip(
-        "0",
+        f"{DURATION}",
         fontsize=FONT_SIZE,
         font=FONT,
         color=TEXT_COLOR_ALERT,
@@ -156,7 +156,7 @@ final_video = concatenate_videoclips([final_video.set_duration(
     DURATION - ALERT_INTERVAL
 ), blink_video, end_video])
 final_video.write_videofile(
-    f"./video_{SCREEN_SIZE[0]}x{SCREEN_SIZE[1]}_{get_font_name(FONT)}_{get_color_name(BACKGROUND_COLOR)}_countdown_{str(timedelta(seconds=DURATION)).replace(':', '-')}.mp4",
+    f"./video_countup_{SCREEN_SIZE[0]}x{SCREEN_SIZE[1]}_{get_font_name(FONT)}_{get_color_name(BACKGROUND_COLOR)}_countdown_{str(timedelta(seconds=DURATION)).replace(':', '-')}.mp4",
     fps=1,
     codec="libx264",
     audio_codec="aac",
